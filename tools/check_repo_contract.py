@@ -27,8 +27,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 ROLES = ["stakeholder", "product-manager", "architect", "developer", "tester"]
-STATE_KEYS = ["backlog", "refine", "architect", "ready", "in_progress", "review", "done",
-              "canceled", "halted"]
+STATE_KEYS = ["backlog", "refine", "architect", "approval", "ready", "in_progress", "review",
+              "done", "canceled", "halted"]
 REQUIRED_WORKFLOW_KEYS = ["tracker", "orchestrator", "agents", "project", "gates", "merge"]
 REQUIRED_AGENT_KEYS = ["name", "role", "owned_states", "model", "runner", "inputs", "outputs",
                        "guardrails", "handoff"]
@@ -210,6 +210,22 @@ else:
                 record("merge_lock", "Manual merges are protected by a draft lock", "WARN",
                        "merge.policy is manual and merge.draft_until_verdict is not true",
                        "open PRs as drafts, or complete the required-check lock (SMA-91)")
+            # §8.7: an enabled approval gate with no park state is the silent gate-deletion case --
+            # the orchestrator would look for a state that does not exist and either crash or skip.
+            placement = dig(workflow, "gates.human_approval")
+            if placement and placement != "none":
+                if not dig(workflow, "tracker.states.approval"):
+                    record("c3_approval_state", "Approval gate has a park state", "FAIL",
+                           f"gates.human_approval={placement!r} but tracker.states.approval is unset",
+                           "set tracker.states.approval, or disable the gate")
+                else:
+                    record("c3_approval_state", "Approval gate has a park state", "PASS",
+                           f"{placement!r} -> {dig(workflow, 'tracker.states.approval')!r}")
+                # C-15/C-16/C-17 are runtime properties of the poller, not of this file. Reported
+                # as SKIP with the reason rather than silently omitted from the checklist.
+                record("c15_reserved_transition", "Orchestrator never makes the reserved transition (C-15)",
+                       "SKIP", "runtime property — the poller owns it",
+                       "asserted by the poller's reserved-transition test")
 
             repo = dig(workflow, "project.repo") or ""
             if not repo or "<" in repo or "CONFIRM" in repo:

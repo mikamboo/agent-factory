@@ -98,3 +98,32 @@ squash` in `WORKFLOW.md` describes intent rather than enforced reality. Changing
 needs `Administration: read+write` on the token, which it does not have (403 on
 `PATCH /repos/{owner}/{repo}`). The install doctor now reports this as a WARN rather than letting it
 stay invisible.
+### 2026-09-11 — One human approval gate before implementation (§12.1 amended)
+
+**Decision:** the pipeline stops once, immediately before the expensive stage, and waits for a human
+to decide whether to pay for the feature. `gates.human_approval: before_implementation` parks the
+issue in `Awaiting Approval`; the human approves by moving it to `Ready for Dev`, and the
+orchestrator MUST NOT perform that transition under any circumstance.
+
+**Why this amends §12.1 rather than contradicting it.** §12.1 said *"approval gates inside the loop
+defeat the purpose"*, and that argument stands for **quality** gates: the pipeline must not ask
+permission to be correct. This is a **budget** gate — a different question (*is this the thing we
+want built at all?*) at a different place (where the tokens are). Refinement and architecture cost
+under 300k between them; implementation is 500k per attempt against up to three attempts, plus CI,
+plus a verification pass. Roughly an order of magnitude. Without the gate, an unwanted feature is
+discovered after it has been paid for.
+
+**Constraints accepted:** at most one such gate; immediately before the most expensive stage; and it
+is counted as a cost — throughput becomes a function of the human's attention, which is exactly what
+§12.1 warned about. `merge.policy: manual` is the same trade in the same version, and both relax
+together once the pipeline has a track record.
+
+**Rejected alternative:** a second label (`factory:approved`) as the gate, reusing the existing
+permission boundary. Rejected because the state machine could not then *express* "waiting for
+approval" — the issue would sit in `Ready for Dev` unapproved, visually identical to the documented
+failure mode of an unlabelled issue that looks like a broken factory.
+
+**Consequence, recorded at creation time:** `Awaiting Approval` was created as type `started`, which
+puts it inside the set the reconcile poller sweeps for stale runs. Without an explicit exclusion, a
+parked approval would be reclaimed and silently returned to `Ready for Dev` — deleting the gate and
+starting unapproved work. §8.5 carries the exclusion; C-17 tests it.

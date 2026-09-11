@@ -24,6 +24,7 @@ deliberately unused — they are not part of the pipeline.
 | `backlog` | Backlog | backlog | `4c63270c-2148-4ae2-9e15-20c322b94455` |
 | `refine` | To Refine | unstarted | `4c166d70-cec5-435a-adff-f46874cb8051` |
 | `architect` | To Architect | unstarted | `0572c9f5-8eba-4d75-9ef3-701525cd93c0` |
+| `approval` | Awaiting Approval | **started** | `d7075d21-b310-497e-a8e7-59a7b6c42342` |
 | `ready` | Ready for Dev | unstarted | `4adee3c2-9967-4b78-9f1c-bcbfa59aeb31` |
 | `in_progress` | In Progress | started | `1e744ec4-aae1-4f7f-b72c-006442891998` |
 | `review` | In Review | started | `ce4b2cbf-cc17-42f7-86d5-4ebd4a31ccd1` |
@@ -33,7 +34,7 @@ deliberately unused — they are not part of the pipeline.
 | — *(unused)* | Todo | unstarted | `a568ea6c-c113-41b2-8cc4-ea1f9bdf6091` |
 | — *(unused)* | Duplicate | duplicate | `9f9fe34b-db73-40c7-8e18-d1d9f076a3a2` |
 
-**Two things worth knowing about these states:**
+**Three things worth knowing about these states:**
 
 - **`To Architect` and `Attempt Halted` were created by hand in the Linear UI.** Linear exposes no
   API for workflow-state creation, so any new instance needs the same manual step. This is the
@@ -42,6 +43,12 @@ deliberately unused — they are not part of the pipeline.
   The type is not what protects the pipeline: §8.5 states explicitly that `Attempt Halted` is never
   a candidate state for any stage and never appears in a stage's ready-state set, so the exclusion
   holds regardless of the type Linear reports.
+- **`Awaiting Approval` is type `started`, and that one has teeth.** Created as `started` rather
+  than the `unstarted` SPEC §8.1 first assumed, which matters because the reconcile poller sweeps
+  *in-progress* states looking for stale runs. Without an explicit rule, an approval parked for a
+  few days would look like a dead worker, be reclaimed, and land back in `Ready for Dev` — silently
+  deleting the gate and starting an expensive implementation nobody approved. §8.5 now carries the
+  exclusion, and conformance C-17 tests it. **If this state is ever re-typed, re-read §8.5 first.**
 
 ## Projects
 

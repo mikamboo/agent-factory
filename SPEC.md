@@ -260,7 +260,8 @@ tracker:
   states:                      # names, resolved to UUIDs at startup; recorded in docs/linear-setup.md
     backlog: Backlog
     refine: To Refine
-    architect: To Architect    # TO CREATE in the Linear UI (§18 D-4)
+    architect: To Architect      # created in the Linear UI (no API exists)
+    approval: Awaiting Approval  # created in the Linear UI; park state for §8.7
     ready: Ready for Dev
     in_progress: In Progress
     review: In Review
@@ -292,6 +293,7 @@ project:
   deploy_target: none | github_pages | vercel   # gates §11.5 smoke
   preview_per_pr: true
 gates:
+  human_approval: before_implementation   # none | after_refinement | before_implementation | both (§8.7)
   require_gwt_criteria: true   # MUST remain true
   require_tdd_test_per_criterion: true
   require_ci_green: true
@@ -381,6 +383,7 @@ UUIDs recorded in `docs/linear-setup.md`.
 | `Backlog` | backlog | Human posted an idea; not yet picked up | Human |
 | `To Refine` | unstarted | Stakeholder then PM working | Stakeholder → PM |
 | `To Architect` | unstarted | PRD accepted, awaiting tech plan | Architect |
+| `Awaiting Approval` | started | Tech plan + sub-issues exist; parked for the human's budget decision (§8.7). **Never** a candidate state, never reclaimed | Human |
 | `Ready for Dev` | unstarted | Sub-issues exist and are unblocked | Orchestrator queue |
 | `In Progress` | started | Developer working (claimed) | Developer |
 | `In Review` | started | PR open, awaiting verdict | Tester |
@@ -396,7 +399,9 @@ UUIDs recorded in `docs/linear-setup.md`.
 | `To Refine` | `To Refine` | scope note written, then PRD written (same state, two passes) | Orchestrator |
 | `To Refine` | `Canceled` | Stakeholder recommends don't-build | Orchestrator |
 | `To Refine` | `To Architect` | PRD exists AND ≥1 G/W/T criterion (§11.1) | Orchestrator |
-| `To Architect` | `Ready for Dev` | tech plan + sub-issues exist | Orchestrator |
+| `To Architect` | `Awaiting Approval` | tech plan + sub-issues exist AND `gates.human_approval` is on | Orchestrator |
+| `Awaiting Approval` | `Ready for Dev` | the human approved the plan | **Human only.** The orchestrator MUST NOT perform this transition (§8.7) |
+| `To Architect` | `Ready for Dev` | tech plan + sub-issues exist AND the gate is off | Orchestrator |
 | `Ready for Dev` | `In Progress` | claim succeeds + no blocking relation open | Orchestrator |
 | `In Progress` | `In Review` | PR open AND CI green | Orchestrator |
 | `In Progress` | `Ready for Dev` | run failed / stale reclaimed | Orchestrator |
@@ -432,6 +437,10 @@ Each stage MUST skip issues that already carry its artifact: a scope note (Stake
 with criteria (PM), a tech plan + sub-issues (Architect), a PR closing the issue (Developer), a
 verdict comment (Tester). Re-running a tick MUST be free of side effects.
 
+`Awaiting Approval` is likewise never a candidate state for any stage, and MUST NOT be reclaimed as
+a stale run however long it waits: nothing is running, and the delay is a human's response time
+rather than a dead worker (§8.7).
+
 `Attempt Halted` is **never** a candidate state for any stage, and is never in a stage's
 ready-state set: it is a parking state whose only exit is explicit human action, taken after
 reading why the issue stopped. A poller that treats it as ready turns a halted issue into an
@@ -445,6 +454,44 @@ The human comments on an issue to steer it (`@factory revise: <instruction>`). T
 owning stage MUST include unaddressed human comments in the agent's context and MUST mark them
 addressed by replying. Human instructions always outrank agent recommendations, except where they
 violate a MUST clause — in which case the Factory MUST refuse in a comment and halt the issue.
+
+### 8.7 Human approval gate (budget control)
+
+Refinement and architecture are cheap. Implementation is roughly an order of magnitude more
+expensive: a coding-agent session against its budget cap, up to three attempts, then CI, then a
+verification pass. A single decision point immediately before that stage is therefore worth its
+cost — and it is the only gate of this kind the specification permits (§12.1).
+
+**It is a budget gate, not a quality gate.** The pipeline MUST NOT ask permission to be correct.
+This gate answers a different question — *is this the thing we want built at all* — and answering it
+is what stops a full implementation budget being spent on an unwanted feature.
+
+- **Placement** is configured by `gates.human_approval`; `before_implementation` parks the issue in
+  `Awaiting Approval` instead of `Ready for Dev`, once the tech plan and sub-issues exist.
+- **Approval is a state move.** The human moves `Awaiting Approval` → `Ready for Dev`. Nothing else
+  records approval: the tracker's own state history is the audit trail, and no field is maintained
+  alongside it.
+- **The reserved transition.** `Awaiting Approval` → `Ready for Dev` is the one transition in this
+  specification that the orchestrator MUST NOT perform under any circumstance, recovery included. An
+  orchestrator that makes it has deleted the gate, not recovered from a fault.
+- **The request MUST be cost-visible.** Before asking, the comment states the criterion count and the
+  sub-issue count, the files to be touched and any new dependency, the budget about to be spent
+  (per-role caps and attempts remaining), and whether the change deploys publicly or is otherwise
+  irreversible. Cost MUST be a range derived from those caps: false precision about future spend is
+  worse than an honest range. A prompt that merely asks "approve this plan?" trains rubber-stamping
+  and is non-conformant.
+- **Approval lapses when the plan changes.** Approval authorises a specific plan. If the tech plan or
+  the sub-issue set changes materially afterwards, the orchestrator MUST return the issue to
+  `Awaiting Approval` with a comment naming what changed — implemented as a hash over the plan and
+  the sub-issue set. A stale approval that authorises unread work is worse than no gate, because it
+  *feels* approved.
+- **Waiting is visible, never automatic.** An unactioned request appears in the human's queue with
+  its age. The orchestrator MUST NOT auto-approve (that deletes the gate) and MUST NOT auto-cancel
+  (that discards finished refinement work). An issue parked here is not a stale run and MUST NOT be
+  reclaimed.
+- **The bypass is the state itself.** A human may place an issue directly in `Ready for Dev` to skip
+  the gate. No label or flag exists for this: placing the state *is* the decision, so every issue
+  that skipped the gate was deliberately placed.
 
 ## 9. Orchestration
 
@@ -544,13 +591,27 @@ alert the human. This clause is what makes `auto` deploys acceptable.
 
 ## 12. Autonomy, Veto, and Human Intervention
 
-### 12.1 Veto
+### 12.1 Veto, and the one permitted gate
 Moving any issue to `Canceled` stops it at the next tick. In-flight runs MUST NOT be killed
 mid-turn; they finish, their output is discarded (PR closed, not merged), and the reason is noted.
 
+Approval gates inside the loop defeat the purpose, because the pipeline's job is to be verifiably
+correct without supervision — it MUST NOT ask permission to be correct. There is exactly one
+exception, and it is a budget concern rather than a quality one: the gate of §8.7, placed immediately
+before the most expensive stage. It is permitted subject to three conditions:
+
+1. **At most one.** Two gates mean the human *is* the pipeline, and any autonomy claim becomes false.
+2. **Immediately before the most expensive stage**, where the tokens actually are.
+3. **Counted as a cost.** Throughput becomes a function of the human's attention. That is the price,
+   and it caps how many gates may ever exist.
+
+`merge.policy: manual` (§11.4) is the same trade in the same version, and both relax together once
+the pipeline has a track record.
+
 ### 12.2 Intervention points
-The human is asked only in four cases: `Attempt Halted` (3 failures or budget spent), a PM gate
-blockage (no testable criteria), a Tester `UNVERIFIED` on a criterion the spec cannot test, and a
+The human is asked only in five cases: an approval request parked in `Awaiting Approval` (§8.7),
+`Attempt Halted` (3 failures or budget spent), a PM gate blockage (no testable criteria), a Tester
+`UNVERIFIED` on a criterion the spec cannot test, and a
 failed post-deploy smoke that reverted. Everything else is silent.
 
 ### 12.3 Risk tiers
@@ -649,6 +710,9 @@ The decision log MUST record any deviation from a SHOULD clause before it is mer
 | C-12 | A stale run is reclaimed within one reconcile tick | simulated stall |
 | C-13 | Third failure halts the issue instead of looping | simulated repeated failure |
 | C-14 | Per-role turn/token caps are enforced | budget test |
+| C-15 | The orchestrator never performs the `Awaiting Approval` → `Ready for Dev` transition | reserved-transition test |
+| C-16 | A material plan change after approval returns the issue to `Awaiting Approval` | plan-hash test |
+| C-17 | An issue parked in `Awaiting Approval` is never reclaimed as a stale run | long-park test |
 
 ## 18. Decisions
 
