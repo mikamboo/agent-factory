@@ -386,7 +386,7 @@ UUIDs recorded in `docs/linear-setup.md`.
 | `In Review` | started | PR open, awaiting verdict | Tester |
 | `Done` | completed | Merged and verified | — |
 | `Canceled` | canceled | Human veto, or stakeholder don't-build | Human |
-| `Attempt Halted` | started | ≥3 failed attempts or budget exhausted — needs a human | Human |
+| `Attempt Halted` | unstarted | ≥3 failed attempts or budget exhausted — needs a human. **Never** a candidate for any stage (§8.2) | Human |
 
 ### 8.2 Transitions
 
@@ -431,6 +431,13 @@ before claiming is a MUST NOT: it is the documented cause of duplicate-worker ra
 Each stage MUST skip issues that already carry its artifact: a scope note (Stakeholder), a PRD
 with criteria (PM), a tech plan + sub-issues (Architect), a PR closing the issue (Developer), a
 verdict comment (Tester). Re-running a tick MUST be free of side effects.
+
+`Attempt Halted` is **never** a candidate state for any stage, and is never in a stage's
+ready-state set: it is a parking state whose only exit is explicit human action, taken after
+reading why the issue stopped. A poller that treats it as ready turns a halted issue into an
+infinite retry loop — exactly the failure the halt state exists to prevent. This holds whatever
+Linear type the state carries, which is why the rule is stated here rather than inferred from the
+type.
 
 ### 8.6 Human feedback path
 
@@ -652,11 +659,11 @@ Resolved 2026-09-11. Changes to any row below MUST be recorded in `docs/decision
 | D-1 | **Chassis** — what runs the loop | **(a) Hermes cron pollers + Linear MCP + `delegate_task`** | No new daemon to run or upgrade. `ai-symphony` stays a separate product; its `WORKFLOW.md` contract and safety invariants are reused (§19). |
 | D-2 | **Repo** — where this lives | **New repo `mikamboo/agent-factory`** | Product code never lives here (R-4). One Factory, many `projects/<slug>/` briefs. |
 | D-3 | **Linear home** — team + project | **`SMART BAMBOO` (SMA)** | Project `Agent Factory` created in SMA. No new team. Trade-off: factory issues sit beside client work in the same team view. |
-| D-4 | **New workflow states to create** | **`To Architect` and `Attempt Halted`** | Must be created in the Linear UI (no API for workflow-state creation); UUIDs recorded in `docs/linear-setup.md`. |
+| D-4 | **New workflow states to create** | **DONE — `To Architect` (`0572c9f5-8eba-4d75-9ef3-701525cd93c0`) and `Attempt Halted` (`2a2127b3-a5a8-470d-8bc6-e5b7d2fdc41e`) created in the Linear UI on 2026-09-11** | Linear exposes no API for workflow states, so this was UI work. `Attempt Halted` was created as type `unstarted`, not `started` as this document first assumed — §8.1 now records the real type and §8.5 states the exclusion rule explicitly, so the orchestrator never depends on the type being right. All IDs: `docs/linear-setup.md`. |
 | D-5 | **Merge policy for v1** | **`manual`, until the pilot reaches `Done` end-to-end** | The Factory posts "ready to merge" and waits. `auto` requires a project to pass the §12.3 risk tier *and* C-8 / C-9 to pass on a real project. |
 | D-6 | **Models per role** | **Role-specific** | Stakeholder + PM on `deepseek-flash` (cheap, high volume); Architect + Tester on `deepseek-v4-pro` (their output is the quality floor) — both verified live against `GET https://api.deepseek.com/models`. Developer via the `claude` CLI in **its own authenticated session** (Anthropic subscription by default; a compatible endpoint + key is a supported alternative, §7.5). The repository never pins the runner's provider. |
 | D-7 | **Project status semantics** | **`Backlog` → `In Progress` → `Completed`** | Project sits in `Backlog` while only ideas exist; moves to `In Progress` at the first issue entering `To Refine`; `Completed` when no open issues remain. |
-| D-8 | **First pilot** | **OPEN — awaiting a concrete idea** | Needed before `WORKFLOW.md` and `projects/<slug>/BRIEF.md` can be written, since the brief carries the stack and deploy target. |
+| D-8 | **First pilot** | **Resolved 2026-09-11 — "Africa Geo Quest": a game for learning African geography (country positions and names, cities, rivers/streams) on an interactive map.** | Chosen for properties that make it a fair test rather than an easy one: it is **static** (no backend, no database, no secrets), so `deploy_target: github_pages` is available and the smoke-and-revert gate is exercisable; it is **visual**, so the Tester can verify acceptance criteria against a running preview instead of reading a diff; and it is **data-heavy**, so the criterion→test mapping is concrete rather than hand-waved. Scope is deliberately NOT fixed here — that is the Stakeholder agent's first job (§5.1). |
 
 ## 19. Relationship to Prior Art
 
