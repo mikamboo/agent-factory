@@ -279,9 +279,8 @@ agents:
   architect:       { model: deepseek-v4-pro, runner: delegate_task, max_turns: 40, token_budget: 300k }
   developer:       { model: claude_code,     runner: claude_code,   max_turns: 60, token_budget: 500k }
   tester:          { model: deepseek-v4-pro, runner: delegate_task, max_turns: 40, token_budget: 300k }
-  # developer.model is the runner's own selection; pin it to DeepSeek with
-  # ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic before the pilot -- that var is currently
-  # absent from ~/.hermes/.env.
+  # The developer runs the claude CLI in its own authenticated session: the model and the provider
+  # are the CLI's concern, not this file's (§7.5). Do NOT pin a provider, endpoint or key here.
 limits:
   max_concurrent_developers: 1
   max_open_issues_per_run: 3
@@ -347,6 +346,28 @@ handoff:
 `WORKFLOW.md` and `agents/*.md` are read at the start of every tick from the default branch. An
 invalid file MUST NOT stop the Factory: the tick is skipped with an error log and the issue stays
 in place. Configuration is never partially applied.
+
+### 7.5 Coding-agent credentials
+
+The coding agent authenticates locally. This repository MUST NOT carry a provider endpoint, a key,
+or any instruction to repoint the coding CLI at a different provider: credentials are per-machine
+installation state, not part of the repository contract (R-2 in spirit — config and roles stay
+portable, machines stay specific).
+
+- **Default:** the CLI's own authenticated session, i.e. an Anthropic subscription. This is what
+  most installations will have, and it requires nothing in this repository.
+- **Supported alternative:** a provider that exposes an Anthropic-compatible endpoint, configured
+  through the environment (base URL + credential) rather than through `WORKFLOW.md`.
+
+Consequently the installation checks MUST:
+
+1. Verify the runner **functionally** — one minimal non-interactive invocation, not a version
+   string and not an auth-status read. A coding CLI can be installed, report a healthy login, and
+   still fail the moment it is invoked.
+2. On failure, name **both** ways forward: authenticate or subscribe the CLI, *or* point it at a
+   compatible endpoint with a key. The message MUST NOT silently assume either one — assuming the
+   subscription strands a user who has none, and assuming a third-party endpoint silently sends
+   work to a provider the user did not choose.
 
 ## 8. Linear State Machine
 
@@ -633,7 +654,7 @@ Resolved 2026-09-11. Changes to any row below MUST be recorded in `docs/decision
 | D-3 | **Linear home** — team + project | **`SMART BAMBOO` (SMA)** | Project `Agent Factory` created in SMA. No new team. Trade-off: factory issues sit beside client work in the same team view. |
 | D-4 | **New workflow states to create** | **`To Architect` and `Attempt Halted`** | Must be created in the Linear UI (no API for workflow-state creation); UUIDs recorded in `docs/linear-setup.md`. |
 | D-5 | **Merge policy for v1** | **`manual`, until the pilot reaches `Done` end-to-end** | The Factory posts "ready to merge" and waits. `auto` requires a project to pass the §12.3 risk tier *and* C-8 / C-9 to pass on a real project. |
-| D-6 | **Models per role** | **Role-specific** | Stakeholder + PM on `deepseek-flash` (cheap, high volume); Architect + Tester on `deepseek-v4-pro` (their output is the quality floor); Developer via the `claude` CLI (`/home/michael/.local/bin/claude`) on DeepSeek. Both ids verified live against `GET https://api.deepseek.com/models` — they are the only two the provider exposes. |
+| D-6 | **Models per role** | **Role-specific** | Stakeholder + PM on `deepseek-flash` (cheap, high volume); Architect + Tester on `deepseek-v4-pro` (their output is the quality floor) — both verified live against `GET https://api.deepseek.com/models`. Developer via the `claude` CLI in **its own authenticated session** (Anthropic subscription by default; a compatible endpoint + key is a supported alternative, §7.5). The repository never pins the runner's provider. |
 | D-7 | **Project status semantics** | **`Backlog` → `In Progress` → `Completed`** | Project sits in `Backlog` while only ideas exist; moves to `In Progress` at the first issue entering `To Refine`; `Completed` when no open issues remain. |
 | D-8 | **First pilot** | **OPEN — awaiting a concrete idea** | Needed before `WORKFLOW.md` and `projects/<slug>/BRIEF.md` can be written, since the brief carries the stack and deploy target. |
 
