@@ -15,6 +15,9 @@
 #   --fix           pass --fix to `hermes doctor` (Hermes-owned repairs only)
 #   --probe-writes  actively prove GitHub Contents:write with a reversible ref
 #                   create+delete probe (always cleans up). Off by default.
+#   --no-runner-probe  skip the coding-agent invocation probe (it makes one
+#                   minimal real model call; on by default because a version
+#                   string and an auth-status read prove nothing, SPEC 7.5)
 #   --repo DIR      repository root to validate (default: this script's parent)
 #
 # Exit: 0 when no check FAILed, 1 otherwise. WARN and SKIP never fail the run.
@@ -29,6 +32,7 @@ JSON=0
 LIVE=0
 FIX=0
 PROBE_WRITES=0
+RUNNER_PROBE=1
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
 POLLERS=(refine-poller architect-poller dev-poller review-poller merge-watcher reconcile-poller)
@@ -40,6 +44,7 @@ while [ $# -gt 0 ]; do
     --live)         LIVE=1 ;;
     --fix)          FIX=1 ;;
     --probe-writes) PROBE_WRITES=1 ;;
+    --no-runner-probe) RUNNER_PROBE=0 ;;
     --repo)         shift; REPO_ROOT="${1:-$REPO_ROOT}" ;;
     -h|--help)      sed -n '3,20p' "$0"; exit 0 ;;
     *) printf 'unknown argument: %s (try --help)\n' "$1" >&2; exit 2 ;;
@@ -138,23 +143,34 @@ else
 fi
 
 # ─── 5. Coding agent (Developer runner) ──────────────────────────────────────
+# The runner authenticates locally (SPEC 7.5). We never pin a provider here and
+# never inspect credentials: we ask the CLI what it is using, then prove it works
+# with a real invocation. "Installed", "logged in" and "working" are three
+# different states, and only the third one matters.
+RUNNER_REMEDY="either authenticate/subscribe it (claude auth login; claude setup-token for a long-lived token), or point it at an Anthropic-compatible endpoint with your own key (export ANTHROPIC_BASE_URL=<provider>/anthropic and ANTHROPIC_API_KEY=<key>)"
 if have claude; then
-  record claude_cli "claude CLI (Developer runner)" PASS "$(claude --version 2>/dev/null | head -1)" ""
-  if [ -f "$REPO_ROOT/WORKFLOW.md" ] && grep -q 'claude_code' "$REPO_ROOT/WORKFLOW.md" 2>/dev/null; then
-    if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
-      record claude_endpoint "claude model endpoint configured" PASS "ANTHROPIC_BASE_URL set" ""
+  auth_state="$(timeout 30 claude auth status 2>&1 | tr '\n' ' ' | tr -s ' ' | cut -c1-70 || true)"
+  record claude_cli "claude CLI present" PASS "$(claude --version 2>/dev/null | head -1)${auth_state:+ · auth: $auth_state}" ""
+
+  if [ "$RUNNER_PROBE" = 1 ]; then
+    pout="$(timeout 180 claude -p 'Reply with exactly: FACTORY_OK' --max-turns 1 2>&1)"; prc=$?
+    if [ "$prc" -eq 0 ] && printf '%s' "$pout" | grep -q 'FACTORY_OK'; then
+      record claude_run "claude CLI works (real invocation)" PASS "one minimal call returned FACTORY_OK" ""
+    elif [ "$prc" -eq 124 ]; then
+      record claude_run "claude CLI works (real invocation)" FAIL "invocation timed out after 180s" "$RUNNER_REMEDY"
     else
-      record claude_endpoint "claude model endpoint configured" WARN \
-        "WORKFLOW.md selects claude_code but ANTHROPIC_BASE_URL is unset" \
-        "set the provider endpoint the runner should use, e.g. ANTHROPIC_BASE_URL=<provider>/anthropic"
+      record claude_run "claude CLI works (real invocation)" FAIL \
+        "invocation failed (exit $prc): $(printf '%s' "$pout" | head -1 | cut -c1-80)" \
+        "$RUNNER_REMEDY"
     fi
   else
-    record claude_endpoint "claude model endpoint configured" SKIP "WORKFLOW.md not present yet" ""
+    record claude_run "claude CLI works (real invocation)" SKIP "skipped by --no-runner-probe" \
+      "a version string and an auth-status read are not proof — re-run without the flag"
   fi
 else
-  record claude_cli "claude CLI (Developer runner)" FAIL "claude not found on PATH" \
-    "install the coding CLI, or point agent_runner.kind at one you have (codex/opencode)"
-  record claude_endpoint "claude model endpoint configured" SKIP "no coding CLI" ""
+  record claude_cli "claude CLI present" FAIL "claude not found on PATH" \
+    "install the coding CLI (or point agent_runner.kind at one you have: codex, opencode)"
+  record claude_run "claude CLI works (real invocation)" SKIP "no coding CLI" ""
 fi
 
 # ─── 6. git: commit identity + push path ─────────────────────────────────────

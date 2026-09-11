@@ -36,7 +36,7 @@ right-hand column as "known good", not as a hard floor.
 |---|---|---|
 | Hermes Agent | orchestrator: cron pollers, MCP client, `delegate_task` | v0.21.1 (2026.9.7) |
 | Linear MCP server | every tracker read and write | `https://mcp.linear.app/mcp`, `auth: oauth` |
-| Coding CLI | the Developer runner | `claude` 2.1.251 |
+| Coding CLI | the Developer runner, in its own authenticated session (§4) | `claude` 2.1.251 |
 | `gh` CLI | PRs, CI status, merge | 2.98.0 |
 | `git` + a GitHub credential | branch pushes, commit attribution | git 2.43.0 + SSH key |
 | `jq`, `curl` | scripts and CI | 1.7 / 8.5.0 |
@@ -101,22 +101,52 @@ that wastes the most time.
 
 ## 4. Coding agent (Developer runner)
 
-Default is Claude Code:
+Default is Claude Code, running in **its own authenticated session** — an Anthropic
+subscription. Nothing in the repository pins a provider: the CLI's own configuration
+decides, the factory never inspects credentials, and `WORKFLOW.md` carries no endpoint
+and no key (SPEC §7.5).
 
 ```bash
 claude --version        # expect 2.1.x
+claude auth status      # which authentication the CLI is using
+claude doctor           # the CLI's own environment health check
 ```
 
-Point it at a non-Anthropic provider if that is the intent — the runner reads the
-provider from the environment, not from the CLI's own config:
+**Installed, logged in and working are three different states.** A version string proves
+nothing, and `claude auth status` is a *status read* — a CLI can report a healthy login and
+fail the moment it is invoked. The only check that counts is a real one:
 
 ```bash
-export ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
+claude -p 'Reply with exactly: FACTORY_OK' --max-turns 1
 ```
 
-If `WORKFLOW.md` selects `runner: claude_code` while `ANTHROPIC_BASE_URL` is
-unset, the doctor raises a `WARN`: the CLI will run, but against whatever
-provider it defaults to, which is rarely what was meant.
+The doctor runs exactly this: one minimal non-interactive call, and the run fails if it does
+not come back. Re-run it with `--no-runner-probe` when you want the checks without making a
+model call.
+
+### If it does not work, there are two options
+
+**Option 1 — authenticate or subscribe.**
+
+```bash
+claude auth login       # sign in to an Anthropic account / subscription
+claude setup-token      # mint a long-lived token, for unattended use
+claude auth logout      # switch accounts
+```
+
+**Option 2 — point it at an Anthropic-compatible endpoint with your own key.** The right
+choice when you have no Anthropic subscription, or when the work should deliberately run
+elsewhere:
+
+```bash
+export ANTHROPIC_BASE_URL=<provider>/anthropic    # e.g. https://api.deepseek.com/anthropic
+export ANTHROPIC_API_KEY=<your-key>               # or a long-lived token from `claude setup-token`
+```
+
+Both are first-class. The doctor's failure message names **both**, on purpose: assuming the
+subscription strands anyone who has none, and assuming a third-party endpoint silently sends
+work to a provider that was never chosen. Put this in your shell environment or secret store —
+never in this repository.
 
 ## 5. GitHub auth — both paths, for different jobs
 
@@ -251,6 +281,7 @@ actually happened.
 | Pollers log "state not found" | a workflow state in `WORKFLOW.md` does not exist | create it in the Linear UI (no API), then update `docs/linear-setup.md` |
 | Issues sit forever in `Backlog` | the `factory` opt-in label is missing | add the label — the poller skips everything else |
 | Commits rejected or unattributed | `user.name`/`user.email` unset | see §6 |
+| Doctor: `claude CLI works (real invocation)` FAIL, but `claude auth status` looks healthy | a status read is not an invocation | authenticate it (`claude auth login`), or set `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` for a compatible endpoint |
 
 ## Known limitations
 
