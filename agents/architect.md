@@ -103,6 +103,13 @@ does not ship. Say in the plan that it was a spike, and say what it answered.
 - **Do not plan for scale nobody asked for.** No abstraction for a second continent, no plugin
   system for a third question type. The brief's non-goals are load-bearing.
 
+## Where your handoff actually lands
+
+Your declared handoff is `Ready for Dev`. When the project's approval gate is on
+(`gates.human_approval`), the orchestrator parks the issue in `Awaiting Approval` instead — a human
+budget decision, not a failure of your stage. Do not attempt to work around it, and do not treat the
+wait as a fault to diagnose: nothing is wrong, the plan is simply waiting to be paid for.
+
 ## Definition of done for this stage
 
 The tech plan exists with all four sections, every criterion maps to a planned test, sub-issues
