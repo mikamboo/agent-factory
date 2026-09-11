@@ -203,6 +203,14 @@ else:
                 if value is not True:
                     record(f"must_{dotted.replace('.', '_')}", f"{dotted} is true (MUST)", "FAIL",
                            f"set to {value!r}", f"{why} (SPEC marks this a MUST)")
+            # A manual merge policy with no draft lock IS the accidental-merge path: the human
+            # click is the merge mechanism, and nothing stops it landing mid-verification.
+            if (dig(workflow, "merge.policy") == "manual"
+                    and dig(workflow, "merge.draft_until_verdict") is not True):
+                record("merge_lock", "Manual merges are protected by a draft lock", "WARN",
+                       "merge.policy is manual and merge.draft_until_verdict is not true",
+                       "open PRs as drafts, or complete the required-check lock (SMA-91)")
+
             repo = dig(workflow, "project.repo") or ""
             if not repo or "<" in repo or "CONFIRM" in repo:
                 record("c3_project_repo", "project.repo is resolved", "WARN",

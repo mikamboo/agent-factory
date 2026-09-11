@@ -259,7 +259,37 @@ else
   record gh_pr_write "GitHub write probe (Pull requests:write)" SKIP "no gh CLI" ""
 fi
 
-# ─── 8. Repository contract (SPEC 6, conformance C-1/C-2) ────────────────────
+# ─── 8. Merge settings (the contract says squash-only; GitHub must agree) ────
+# Drift between WORKFLOW.md's `merge.method: squash` and the repository's actual
+# settings is invisible until someone merges the wrong way. Readable without
+# Administration: write, unlike branch protection, so it is worth asserting here.
+if have gh && [ -n "$origin_url" ]; then
+  slug="$(printf '%s' "$origin_url" | sed -E 's#^git@[^:]+:##; s#^https?://[^/]+/##; s#\.git$##')"
+  ms="$(timeout 30 gh api "repos/$slug" --jq '[.allow_squash_merge,.allow_merge_commit,.allow_rebase_merge,.allow_auto_merge] | @tsv' 2>/dev/null || true)"
+  if [ -z "$ms" ]; then
+    record gh_merge_settings "Merge settings match merge.method: squash" SKIP \
+      "could not read repository settings" "check gh auth and the origin remote"
+  else
+    IFS=$'\t' read -r m_squash m_merge m_rebase m_auto <<<"$ms"
+    drift=""
+    [ "$m_merge" = "true" ] && drift="merge commits enabled"
+    [ "$m_rebase" = "true" ] && drift="${drift:+$drift; }rebase merges enabled"
+    [ "$m_auto" = "true" ] && drift="${drift:+$drift; }auto-merge enabled"
+    if [ -n "$drift" ]; then
+      record gh_merge_settings "Merge settings match merge.method: squash" WARN \
+        "$drift" \
+        "PATCH repos/$slug with allow_squash_merge=true and the others false (needs Administration: read+write)"
+    else
+      record gh_merge_settings "Merge settings match merge.method: squash" PASS \
+        "squash only, auto-merge off" ""
+    fi
+  fi
+else
+  record gh_merge_settings "Merge settings match merge.method: squash" SKIP \
+    "no gh CLI or no origin remote" ""
+fi
+
+# ─── 9. Repository contract (SPEC 6, conformance C-1/C-2) ────────────────────
 if [ -f "$REPO_ROOT/SPEC.md" ]; then
   record repo_spec "SPEC.md present" PASS "found" ""
 else
@@ -309,7 +339,7 @@ else
     "clean" ""
 fi
 
-# ─── 9. Linear workflow states and opt-in label ──────────────────────────────
+# ─── 10. Linear workflow states and opt-in label ──────────────────────────────
 # Deliberate limitation: Linear auth is OAuth through the MCP server, and there
 # is no non-interactive Linear API credential on this machine. A shell script
 # cannot enumerate a team's workflow states or labels, and inventing a check that
@@ -321,7 +351,7 @@ record linear_label "Opt-in label exists" SKIP \
   "requires a tracker read — not reachable from a shell" \
   "verified agent-side by the factory setup skill"
 
-# ─── 10. Pollers registered (must not assume an installation) ────────────────
+# ─── 11. Pollers registered (must not assume an installation) ────────────────
 if [ "$HAS_HERMES" = 1 ]; then
   jobs="$(timeout 60 hermes cron list 2>&1)"
   found=(); absent=()

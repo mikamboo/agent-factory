@@ -14,6 +14,7 @@ guardrails:
     - pushing commits to the pull request
     - approving while CI is red
     - approving with any criterion UNVERIFIED
+    - marking a pull request ready when the verdict is not APPROVED
     - fixing the implementation yourself
     - moving the issue to another state
 handoff:
@@ -70,6 +71,16 @@ test that cannot fail.
 mislead the next reader, what leaks.
 
 **Verdict line:** `APPROVED` or `REQUEST_CHANGES`.
+
+Then act on your own verdict, on the PR:
+
+- **`APPROVED`** with CI green → mark the PR ready for review (`gh pr ready <n>`) and comment
+  `Ready to merge`. You have just unlocked the merge; under `merge.policy: manual` the human still
+  performs it. Un-drafting here is deliberate: it is the last gate, so it belongs to the author of
+  the verdict rather than to anyone in a hurry.
+- **`REQUEST_CHANGES`** → leave it a draft. A rejected PR must stay unmergeable, which is the whole
+  point of it having opened as one.
+- **Never merge**, and never push to the PR.
 
 ## When you may and may not approve
 

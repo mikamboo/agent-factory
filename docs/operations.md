@@ -92,6 +92,18 @@ issue stays where it is. Configuration is never half-applied.
 To change the **runner's provider or credentials**: put it in the environment, never in this
 repository (SPEC §7.5). `WORKFLOW.md` must not carry an endpoint or a key.
 
+## Merging (v1: you do it)
+
+PRs open as **drafts**, so nothing is mergeable while it is still being verified — GitHub refuses to
+merge a draft, including for admins. The Tester marks the PR ready once it has posted `APPROVED` with
+green CI and said `Ready to merge`. Then the merge is yours:
+
+```bash
+gh pr merge <n> --squash
+```
+
+If a PR is still a draft, that is not an oversight — something is still being verified.
+
 ## Undo a bad merge
 
 - **Deploy failure** — automatic. The post-deploy smoke reverts the merge commit, returns the issue

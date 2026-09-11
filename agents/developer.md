@@ -17,6 +17,7 @@ guardrails:
     - editing CI configuration or branch protection
     - writing secrets or credentials into the repository
     - folding a second sub-issue into the same pull request
+    - marking the pull request ready for review    # the Tester's call at verdict time
     - moving the issue to another state
 handoff:
   on_success: In Review
@@ -52,9 +53,12 @@ be reviewable by someone who was not there while you wrote it.
    before opening the PR. A red PR wastes a verification cycle and the Tester cannot approve it
    anyway.
 5. **Branch:** `<TEAM>-<N>-<slug>`, cut from the default branch.
-6. **Open a PR** whose body contains `Closes <TEAM>-<N>`, a per-criterion checklist, and proof where
-   proof is observable (a screenshot, a command and its output). That marker is what drives the
+6. **Open a DRAFT PR** whose body contains `Closes <TEAM>-<N>`, a per-criterion checklist, and
+   proof where proof is observable (a screenshot, a command and its output). That marker drives the
    tracker's native sync — do not hand-maintain state yourself.
+   Draft on purpose: GitHub refuses to merge a draft, including for admins, so nobody can land your
+   work by accident while it is still being verified. **You must not mark it ready** — the Tester
+   does that at verdict time, and un-drafting early is the one action that defeats the lock.
 
 ## When the plan is wrong
 

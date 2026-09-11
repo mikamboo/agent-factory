@@ -74,3 +74,27 @@ beyond the repo, no external side effects, reversible deploys), and `merge.polic
 pilot's purpose is to exercise the pipeline, and a human in the merge path during the first run is
 how the first run teaches anything. §18 D-5 already said this; recorded here because it is the
 decision most likely to be second-guessed while watching an autonomous pipeline sit idle.
+
+### 2026-09-11 — Pull requests open as drafts until the Tester's verdict
+
+**Decision:** the Developer opens every PR as a **draft**; only the Tester un-drafts it, at verdict
+time. Recorded in `WORKFLOW.md` as `merge.draft_until_verdict: true`.
+
+**Why:** under `merge.policy: manual` the human click *is* the merge mechanism, which makes the
+accidental click the most likely way this pipeline ships unverified work. A draft is the one lock
+GitHub applies even to the repository admin — it refuses to merge one, full stop. Two clicks of
+friction on the deliberate path, none on the accidental one.
+
+**What it does not cover:** a draft can be un-drafted and merged in two clicks, so the draft is a
+lock only while un-drafting is itself gated. The enforcing half — a required `factory/mergeable`
+check keyed to the head SHA, plus "do not allow bypassing" — is SMA-91.
+
+**Cost:** an extra step for whoever merges, and the Tester gains a GitHub action it did not have
+before. That is deliberate: the un-draft is the last gate, so it belongs to the author of the
+verdict rather than to whoever is in a hurry.
+
+**Known drift:** the repository still allows merge-commit and rebase-merge, so `merge.method:
+squash` in `WORKFLOW.md` describes intent rather than enforced reality. Changing repository settings
+needs `Administration: read+write` on the token, which it does not have (403 on
+`PATCH /repos/{owner}/{repo}`). The install doctor now reports this as a WARN rather than letting it
+stay invisible.
