@@ -123,7 +123,16 @@ permission boundary. Rejected because the state machine could not then *express*
 approval" — the issue would sit in `Ready for Dev` unapproved, visually identical to the documented
 failure mode of an unlabelled issue that looks like a broken factory.
 
-**Consequence, recorded at creation time:** `Awaiting Approval` was created as type `started`, which
-puts it inside the set the reconcile poller sweeps for stale runs. Without an explicit exclusion, a
-parked approval would be reclaimed and silently returned to `Ready for Dev` — deleting the gate and
-starting unapproved work. §8.5 carries the exclusion; C-17 tests it.
+**Consequence, and its correction.** `Awaiting Approval` was created as type `started`, which put it
+inside the set the reconcile poller sweeps for stale runs: a parked approval would have been
+reclaimed and silently returned to `Ready for Dev`, deleting the gate and starting unapproved work.
+The type was corrected to `unstarted` the same day — and **that correction replaced the state and
+issued a new ID** (`d7075d21-…` → `4b5d431d-…`), instantly invalidating the identifier already
+recorded in `docs/linear-setup.md`.
+
+Two things were learned, and both are now enforced rather than remembered:
+
+1. The exclusion rule is kept **regardless of the type** (§8.5, C-17). A parked approval is not a dead
+   worker whatever Linear says, and the type is editable by anyone who opens the state.
+2. States are resolved **by name, never by UUID** (§8.1). `WORKFLOW.md` resolving names is why this
+   edit broke a table instead of breaking the pipeline.

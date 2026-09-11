@@ -378,12 +378,18 @@ Consequently the installation checks MUST:
 Board states are the pipeline. Custom states beyond the team default are created once and their
 UUIDs recorded in `docs/linear-setup.md`.
 
+**Resolve states by name, never by UUID.** A UUID is not stable across an edit: recreating a state —
+including merely changing its type — issues a new one, and every recorded reference to the old one
+becomes a pointer at nothing. Names survived exactly this on the first instance, while the recorded
+identifiers did not. UUIDs belong in the reference table for verification, not in the resolution
+path.
+
 | State | Type | Meaning | Owner |
 |---|---|---|---|
 | `Backlog` | backlog | Human posted an idea; not yet picked up | Human |
 | `To Refine` | unstarted | Stakeholder then PM working | Stakeholder → PM |
 | `To Architect` | unstarted | PRD accepted, awaiting tech plan | Architect |
-| `Awaiting Approval` | started | Tech plan + sub-issues exist; parked for the human's budget decision (§8.7). **Never** a candidate state, never reclaimed | Human |
+| `Awaiting Approval` | unstarted | Tech plan + sub-issues exist; parked for the human's budget decision (§8.7). **Never** a candidate state, never reclaimed | Human |
 | `Ready for Dev` | unstarted | Sub-issues exist and are unblocked | Orchestrator queue |
 | `In Progress` | started | Developer working (claimed) | Developer |
 | `In Review` | started | PR open, awaiting verdict | Tester |
@@ -439,7 +445,9 @@ verdict comment (Tester). Re-running a tick MUST be free of side effects.
 
 `Awaiting Approval` is likewise never a candidate state for any stage, and MUST NOT be reclaimed as
 a stale run however long it waits: nothing is running, and the delay is a human's response time
-rather than a dead worker (§8.7).
+rather than a dead worker (§8.7). This holds whatever Linear type the state carries — the rule
+exists because a parked approval is not a failed run, and the type is editable by anyone with the
+state open in the UI.
 
 `Attempt Halted` is **never** a candidate state for any stage, and is never in a stage's
 ready-state set: it is a parking state whose only exit is explicit human action, taken after

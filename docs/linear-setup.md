@@ -24,7 +24,7 @@ deliberately unused — they are not part of the pipeline.
 | `backlog` | Backlog | backlog | `4c63270c-2148-4ae2-9e15-20c322b94455` |
 | `refine` | To Refine | unstarted | `4c166d70-cec5-435a-adff-f46874cb8051` |
 | `architect` | To Architect | unstarted | `0572c9f5-8eba-4d75-9ef3-701525cd93c0` |
-| `approval` | Awaiting Approval | **started** | `d7075d21-b310-497e-a8e7-59a7b6c42342` |
+| `approval` | Awaiting Approval | unstarted | `4b5d431d-9d45-4854-af63-ef3c931ff408` |
 | `ready` | Ready for Dev | unstarted | `4adee3c2-9967-4b78-9f1c-bcbfa59aeb31` |
 | `in_progress` | In Progress | started | `1e744ec4-aae1-4f7f-b72c-006442891998` |
 | `review` | In Review | started | `ce4b2cbf-cc17-42f7-86d5-4ebd4a31ccd1` |
@@ -43,12 +43,19 @@ deliberately unused — they are not part of the pipeline.
   The type is not what protects the pipeline: §8.5 states explicitly that `Attempt Halted` is never
   a candidate state for any stage and never appears in a stage's ready-state set, so the exclusion
   holds regardless of the type Linear reports.
-- **`Awaiting Approval` is type `started`, and that one has teeth.** Created as `started` rather
-  than the `unstarted` SPEC §8.1 first assumed, which matters because the reconcile poller sweeps
-  *in-progress* states looking for stale runs. Without an explicit rule, an approval parked for a
-  few days would look like a dead worker, be reclaimed, and land back in `Ready for Dev` — silently
-  deleting the gate and starting an expensive implementation nobody approved. §8.5 now carries the
-  exclusion, and conformance C-17 tests it. **If this state is ever re-typed, re-read §8.5 first.**
+- **A state's UUID is not stable — resolve states by NAME.** `Awaiting Approval` was first created
+  with type `started` and ID `d7075d21-…`. Correcting its type to `unstarted` **replaced the state
+  and issued a new ID** (`4b5d431d-…`), so anything holding the old ID pointed at nothing.
+  `WORKFLOW.md` resolves states by *name* at startup, which is exactly why the pipeline survived an
+  edit that silently invalidated this table. Record UUIDs here for verification only — never as the
+  lookup key.
+- **`Awaiting Approval` is type `unstarted`**, corrected after the risk below was found. It was
+  initially `started`, which put it inside the set the reconcile poller sweeps for stale runs: an
+  approval parked for a few days would have looked like a dead worker, been reclaimed, and landed
+  back in `Ready for Dev` — silently deleting the gate and starting an expensive implementation
+  nobody approved. The type is now correct, and the exclusion rule is **kept anyway** (SPEC §8.5,
+  C-17): a parked approval is not a dead worker whatever the type says, and that type is editable by
+  anyone who opens the state in the UI.
 
 ## Projects
 
