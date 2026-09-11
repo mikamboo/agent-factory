@@ -399,6 +399,17 @@ path.
 
 ### 8.2 Transitions
 
+**Candidate scope — all three filters, not just the label.** An issue is a candidate for a stage only
+if it is in the instance's configured `tracker.project`, carries the opt-in label, **and** is in the
+stage's state. The label alone is not sufficient: an instance configured for one project MUST NOT act
+on issues in another however they are labelled, and it MUST NOT act on unlabelled issues in its own
+project.
+
+This is stated explicitly because getting it wrong in either direction is expensive. Label-only
+scoping means one instance sweeps every opted-in issue across the workspace, including another
+project's backlog, which no configuration asked for. Project-only scoping silently processes issues
+nobody opted in, which is the opposite of what the label exists to guarantee.
+
 | From | To | Condition | Actor |
 |---|---|---|---|
 | `Backlog` | `To Refine` | opt-in label present | Orchestrator |
