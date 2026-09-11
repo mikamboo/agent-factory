@@ -1,0 +1,35 @@
+name: repo contract
+
+# Enforces the static half of the repository contract (SPEC §6, C-1/C-2/C-3):
+# role definitions parse and stay portable, WORKFLOW.md parses and configures the
+# pipeline coherently, and the MUST clauses are still MUST.
+#
+# What this job deliberately does NOT do: verify that configured workflow states
+# exist in the tracker. That needs a tracker read, and there is no API credential
+# in this setup (Linear auth is OAuth through the MCP client). The checker reports
+# that as SKIP with the reason rather than a green tick.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install checker dependencies
+        run: python -m pip install --quiet pyyaml
+
+      - name: Check the repository contract
+        run: python tools/check_repo_contract.py
+
+      - name: Check the repository contract (machine-readable)
+        if: always()
+        run: python tools/check_repo_contract.py --json
