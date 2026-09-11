@@ -85,6 +85,9 @@ merge:
   policy: manual                       # v1 (§18 D-5); flip to auto only after C-8/C-9 pass
   method: squash
   require_tester_approval: true        # MUST remain true (§11.3)
+  draft_until_verdict: true            # PRs open as DRAFTS; GitHub refuses to merge a draft, even
+                                       # for admins. Un-drafting is the Tester's job at verdict time.
+                                       # Cheap half of the merge lock; SMA-91 adds the enforcing half.
 ---
 
 # Shared context
@@ -123,6 +126,9 @@ sources and the definition of done.
 
 - **Commits**: conventional commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`), imperative mood.
 - **One sub-issue, one branch, one PR.** Branch naming: `<TEAM>-<N>-<slug>`.
+- **Pull requests open as DRAFTS.** GitHub refuses to merge a draft, including for admins, so work
+  cannot be merged by accident while it is still being verified. Only the Tester un-drafts it, and
+  only at verdict time.
 - **PR bodies must contain `Closes <TEAM>-<N>`** — this drives native Linear↔GitHub sync. Do not
   rebuild that sync.
 - **Tests before implementation** for anything carrying acceptance criteria.
