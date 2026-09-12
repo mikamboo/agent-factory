@@ -259,10 +259,13 @@ else
   record gh_pr_write "GitHub write probe (Pull requests:write)" SKIP "no gh CLI" ""
 fi
 
-# ─── 8. Merge settings (the contract says squash-only; GitHub must agree) ────
+# ─── 8. Merge safety: squash-only merges, and protection that blocks ─────────
 # Drift between WORKFLOW.md's `merge.method: squash` and the repository's actual
-# settings is invisible until someone merges the wrong way. Readable without
-# Administration: write, unlike branch protection, so it is worth asserting here.
+# settings is invisible until someone merges the wrong way. Both of these are
+# readable with Administration: *read* — write is only needed to change them — so
+# neither has an excuse to go unchecked. An earlier version of this file skipped
+# branch protection on the assumption it was unreadable, which is exactly how a
+# repository with no protection at all passed the doctor.
 if have gh && [ -n "$origin_url" ]; then
   slug="$(printf '%s' "$origin_url" | sed -E 's#^git@[^:]+:##; s#^https?://[^/]+/##; s#\.git$##')"
   ms="$(timeout 30 gh api "repos/$slug" --jq '[.allow_squash_merge,.allow_merge_commit,.allow_rebase_merge,.allow_auto_merge] | @tsv' 2>/dev/null || true)"
@@ -284,8 +287,63 @@ if have gh && [ -n "$origin_url" ]; then
         "squash only, auto-merge off" ""
     fi
   fi
+
+  # ── Branch protection. Absence is a real gap, not a cosmetic one: without a
+  # required check a human can merge a red PR, which is the failure SMA-91 exists
+  # to prevent. Fatal only once merge.policy is auto (C-8), but never invisible.
+  merge_policy="$(awk '/^merge:/{f=1;next} f&&/^[^[:space:]]/{f=0} f&&/^[[:space:]]+policy:/{sub(/.*policy:[[:space:]]*/,"");sub(/[[:space:]]*#.*/,"");gsub(/[[:space:]]+$/,"");print;exit}' "$REPO_ROOT/WORKFLOW.md" 2>/dev/null || true)"
+  def_branch="$(timeout 30 gh api "repos/$slug" --jq '.default_branch' 2>/dev/null || true)"
+  [ -n "$def_branch" ] || def_branch=main
+  pb_raw="$(timeout 30 gh api "repos/$slug/branches/$def_branch/protection" 2>&1)"; pb_rc=$?
+  if [ "$pb_rc" -ne 0 ]; then
+    if printf '%s' "$pb_raw" | grep -qi 'Branch not protected'; then
+      if [ "$merge_policy" = "auto" ]; then
+        record gh_branch_protection "Branch protection on $def_branch" FAIL \
+          "unprotected while merge.policy=auto — C-8 requires protection before auto-merge" \
+          "PUT repos/$slug/branches/$def_branch/protection with required_status_checks.contexts=[CI job id]"
+      else
+        record gh_branch_protection "Branch protection on $def_branch" WARN \
+          "unprotected — a red CI run does not block a merge (merge.policy=${merge_policy:-unset})" \
+          "harmless while merges are manual; C-8 needs it before merge.policy flips to auto"
+      fi
+    elif printf '%s' "$pb_raw" | grep -qE 'Resource not accessible|Not Found|403'; then
+      record gh_branch_protection "Branch protection on $def_branch" WARN \
+        "cannot verify — token needs Administration: read" \
+        "unverifiable is not the same as protected; grant Administration: read and re-run"
+    else
+      record gh_branch_protection "Branch protection on $def_branch" WARN \
+        "could not read branch protection" "check gh auth and network"
+    fi
+  else
+    ctxs="$(printf '%s' "$pb_raw" | jq -r '(.required_status_checks.contexts // []) | join(",")' 2>/dev/null || true)"
+    if [ -z "$ctxs" ]; then
+      record gh_branch_protection "Branch protection on $def_branch" WARN \
+        "protected, but nothing is required — a red PR can still be merged" \
+        "add the CI job id to required_status_checks.contexts"
+    else
+      # The trap this check exists for: a required context that no workflow ever
+      # reports blocks EVERY merge, including the human's, and looks like a hang
+      # rather than a misconfiguration. Compare required contexts against the job
+      # ids the workflows actually define.
+      ci_jobs="$(sed -n '/^jobs:/,$p' "$REPO_ROOT/.github/workflows/ci.yml" 2>/dev/null | grep -oE '^  [A-Za-z0-9_-]+:' | tr -d ' :' | paste -sd, -)"
+      missing=""
+      for c in ${ctxs//,/ }; do
+        case ",$ci_jobs," in *",$c,"*) ;; *) missing="${missing:+$missing, }$c" ;; esac
+      done
+      if [ -n "$missing" ]; then
+        record gh_branch_protection "Branch protection on $def_branch" FAIL \
+          "required check(s) no workflow reports: $missing — this blocks every merge" \
+          "required contexts must match workflow job ids; found: ${ci_jobs:-<none>}"
+      else
+        record gh_branch_protection "Branch protection on $def_branch" PASS \
+          "requires $ctxs, which CI reports" ""
+      fi
+    fi
+  fi
 else
   record gh_merge_settings "Merge settings match merge.method: squash" SKIP \
+    "no gh CLI or no origin remote" ""
+  record gh_branch_protection "Branch protection on the default branch" SKIP \
     "no gh CLI or no origin remote" ""
 fi
 

@@ -117,6 +117,36 @@ doctor_json --repo "$fix2" --no-runner-probe
 check_status "SPEC.md absent" repo_spec FAIL
 expect_exit_nonzero "SPEC.md absent"
 
+# ── Case 6: branch protection (gh-dependent) ─────────────────────────────────
+# The check that matters most here is 6b: a required status context that no
+# workflow ever reports does not fail loudly, it hangs every merge forever.
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  # 6a: the real repo — protected, and the required context is one CI reports.
+  doctor_json --repo "$REPO_ROOT"
+  check_status "real repo protection" gh_branch_protection PASS
+
+  # 6b: provoked — the contract requires a check the workflow never defines.
+  fixb="$(mktemp -d)"
+  git -C "$fixb" init -q
+  git -C "$fixb" remote add origin "https://github.com/mikamboo/agent-factory"
+  mkdir -p "$fixb/.github/workflows"
+  printf 'name: ci\non: [push]\njobs:\n  not-the-required-check:\n    runs-on: ubuntu-latest\n' \
+    > "$fixb/.github/workflows/ci.yml"
+  doctor_json --repo "$fixb" --no-runner-probe
+  check_status "required check no workflow reports" gh_branch_protection FAIL
+
+  # 6c: provoked — protection we cannot read is WARN, never PASS.
+  fixc="$(mktemp -d)"
+  git -C "$fixc" init -q
+  git -C "$fixc" remote add origin "https://github.com/mikamboo/ai-symphony"
+  doctor_json --repo "$fixc" --no-runner-probe
+  check_status "unreadable protection is not a pass" gh_branch_protection WARN
+
+  rm -rf "$fixb" "$fixc"
+else
+  printf '  · branch-protection cases skipped (gh not authenticated)\n'
+fi
+
 rm -rf "$tmpbin" "$tmpbin2" "$fix" "$fix2"
 PATH="$ORIG_PATH"; export PATH
 
