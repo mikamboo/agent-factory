@@ -265,6 +265,66 @@ same as broken.
 
 ---
 
+## 8. Merge safety — squash-only, and protection that actually blocks
+
+Two independent settings, both asserted by the doctor because drift in either is
+invisible until someone merges the wrong way.
+
+**Squash-only merges**, matching `merge.method` in `WORKFLOW.md`:
+
+```bash
+gh api -X PATCH repos/<owner>/<repo> \
+  -f allow_squash_merge=true -f allow_merge_commit=false \
+  -f allow_rebase_merge=false -f delete_branch_on_merge=true
+```
+
+**Branch protection** is what stops a *failing* pull request being merged. The
+draft mechanism covers unverified work; protection covers work whose CI has gone
+red, and nothing else does. Without it, one click merges a red PR — the failure
+SMA-91 exists to prevent:
+
+```bash
+echo '{"required_status_checks":{"strict":false,"contexts":["contract"]},
+       "enforce_admins":false,
+       "required_pull_request_reviews":null,
+       "restrictions":null,
+       "allow_force_pushes":false,
+       "allow_deletions":false,
+       "required_conversation_resolution":true,
+       "required_linear_history":true}' \
+| gh api -X PUT repos/<owner>/<repo>/branches/main/protection --input -
+```
+
+### The context must name the job, not the workflow
+
+`contexts` takes the **job id** from the workflow file — `contract` here, because
+`.github/workflows/ci.yml` declares `jobs: contract:`. It is *not* the workflow's
+`name:` field, which reads `repo contract`. A wrong name does not fail loudly:
+GitHub waits indefinitely for a status that never arrives, and **every merge
+hangs**, the human's included. That is a misconfiguration that presents as a
+hang, which is why the doctor fails any required context no workflow defines.
+
+### Permissions, and what the doctor reports
+
+Reading protection needs **Administration: read**; changing it needs read+write.
+Without it the read returns `403`, which is indistinguishable from "protected by
+something you cannot see" — so the doctor reports `WARN` (*cannot verify*), never
+a pass. Unchecked is not the same as fine, and this gap is exactly how a
+repository with no protection passed this doctor once.
+
+| Doctor result | Meaning |
+| -- | -- |
+| `PASS — requires <ctx>, which CI reports` | protected, context matches a real workflow job |
+| `FAIL — required check(s) no workflow reports` | every merge will hang; fix the context name |
+| `WARN — unprotected` | acceptable while `merge.policy: manual`; a `FAIL` once it is `auto` (C-8) |
+| `WARN — cannot verify` | the token lacks Administration: read |
+
+**Never require approving reviews on a solo repository.** GitHub will not let you
+approve your own pull request, so a required-review rule is a permanent lockout.
+`required_pull_request_reviews: null` above is deliberate. If you want the
+pull-request requirement (to block direct pushes to the default branch), set it
+with `required_approving_review_count: 0`.
+
 ## Troubleshooting
 
 Keyed by the exact signature you will see, because these are the ones that
